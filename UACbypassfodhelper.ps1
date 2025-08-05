@@ -52,4 +52,5 @@ function Invoke-SilentUACBypass {
 }
 
 # === Appel correct ===
-Invoke-SilentUACBypass -Command "Start-Process calc.exe"
+Invoke-SilentUACBypass -Command "Start-Process 'C:\Windows\System32\calc.exe'"
+
