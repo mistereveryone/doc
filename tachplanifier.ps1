@@ -1,15 +1,25 @@
 # Variables
-$TaskName    = "UserModeExec"
-$ProgramPath = "C:\Users\zadih\Desktop\ESTABLISHED.exe"
+$TaskName = "UserModeExec"
 
-# Détecter l'utilisateur actif
-$UserName = (Get-WmiObject Win32_ComputerSystem).UserName
-if (-not $UserName) {
+# Détecter l'utilisateur connecté (format DOMAIN\Username ou PCNAME\Username)
+$FullUserName = (Get-WmiObject Win32_ComputerSystem).UserName
+if (-not $FullUserName) {
     Write-Host "[-] Aucun utilisateur connecté trouvé."
     exit
 }
 
-Write-Host "[*] Utilisateur connecté détecté : $UserName"
+# Extraire uniquement le nom sans domaine/machine
+$UserName = $FullUserName.Split("\")[-1]
+Write-Host "[*] Utilisateur détecté : $UserName"
+
+# Construire le chemin dynamique vers le bureau
+$ProgramPath = "C:\Users\$UserName\Desktop\ESTABLISHED.exe"
+
+# Vérifier si le fichier existe
+if (-not (Test-Path $ProgramPath)) {
+    Write-Host "[-] Le fichier $ProgramPath n'existe pas."
+    exit
+}
 
 # Supprimer la tâche si elle existe déjà
 schtasks /delete /tn $TaskName /f | Out-Null
@@ -18,11 +28,10 @@ schtasks /delete /tn $TaskName /f | Out-Null
 schtasks /create /tn $TaskName `
     /tr "`"$ProgramPath`"" `
     /sc once /st 00:00 `
-    /ru $UserName `
+    /ru $FullUserName `
     /f | Out-Null
 
 # Lancer la tâche immédiatement
 schtasks /run /tn $TaskName
 
-Write-Host "[+] Tâche $TaskName exécutée dans le contexte de $UserName"
-
+Write-Host "[+] Tâche $TaskName exécutée dans le contexte de $FullUserName"
