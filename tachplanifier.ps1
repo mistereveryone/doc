@@ -1,6 +1,6 @@
 # Variables
 $TaskName    = "UserModeExec"
-$ProgramPath = "C:\Users\zadih\Desktop\ESTABLISHED.exe"
+$ProgramPath = "C:\Users\ESTABLISHED.exe"
 
 # Détecter l'utilisateur actif
 $UserName = (Get-WmiObject Win32_ComputerSystem).UserName
@@ -25,4 +25,5 @@ schtasks /create /tn $TaskName `
 schtasks /run /tn $TaskName
 
 Write-Host "[+] Tâche $TaskName exécutée dans le contexte de $UserName"
+
 
